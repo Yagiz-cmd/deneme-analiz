@@ -300,6 +300,7 @@ async function createExam(adminClient: AdminClient, body: Record<string, unknown
 }
 
 const IMAGE_BUCKET = 'da-question-images'
+const MAX_DIRECT_IMAGE_BYTES = 2 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -541,6 +542,109 @@ async function registerQuestionImage(adminClient: AdminClient, body: Record<stri
   }
   return jsonResponse({ ok: true, image_id: data.id })
 }
+
+async function uploadQuestionImageDirect(
+  adminClient: AdminClient,
+  body: Record<string, unknown>
+) {
+  const questionId = String(body.question_id ?? '')
+  const originalName = String(body.original_name ?? '').trim().slice(0, 255)
+  const mimeType = String(body.mime_type ?? '')
+  const encoded = String(body.file_base64 ?? '')
+
+  let sizeBytes: number
+
+  try {
+    sizeBytes = parseFileSizeBytes(body.size_bytes)
+  } catch {
+    return jsonResponse({ ok: false, error: 'Fotoğraf boyutu geçersiz.' }, 400)
+  }
+
+  if (!UUID_PATTERN.test(questionId)) {
+    return jsonResponse({ ok: false, error: 'Soru kimliği geçersiz.' }, 400)
+  }
+
+  if (!originalName || !ALLOWED_IMAGE_TYPES.has(mimeType)) {
+    return jsonResponse({ ok: false, error: 'Fotoğraf adı veya türü geçersiz.' }, 400)
+  }
+
+  if (sizeBytes > MAX_DIRECT_IMAGE_BYTES) {
+    return jsonResponse({
+      ok: false,
+      error: 'Doğrudan yükleme için fotoğraf 2 MB sınırını aşıyor.',
+    }, 413)
+  }
+
+  if (!encoded || encoded.length > Math.ceil(MAX_DIRECT_IMAGE_BYTES / 3) * 4 + 4) {
+    return jsonResponse({ ok: false, error: 'Fotoğraf verisi geçersiz veya çok büyük.' }, 400)
+  }
+
+  let binary: string
+
+  try {
+    binary = atob(encoded)
+  } catch {
+    return jsonResponse({ ok: false, error: 'Fotoğraf verisi çözümlenemedi.' }, 400)
+  }
+
+  if (binary.length !== sizeBytes) {
+    return jsonResponse({ ok: false, error: 'Fotoğraf boyutu doğrulanamadı.' }, 400)
+  }
+
+  const { data: question, error: questionError } =
+    await getQuestionForExam(adminClient, questionId)
+
+  if (questionError || !question) {
+    return jsonResponse({ ok: false, error: 'Fotoğrafın bağlanacağı soru bulunamadı.' }, 404)
+  }
+
+  const buffer = new ArrayBuffer(binary.length)
+  const bytes = new Uint8Array(buffer)
+
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+
+  const extension =
+    mimeType === 'image/jpeg'
+      ? 'jpg'
+      : mimeType === 'image/png'
+        ? 'png'
+        : 'webp'
+
+  const storagePath =
+    `${question.exam_id}/${questionId}/${crypto.randomUUID()}.${extension}`
+
+  const imageBlob = new Blob([buffer], { type: mimeType })
+
+  const { error: uploadError } = await adminClient.storage
+    .from(IMAGE_BUCKET)
+    .upload(storagePath, imageBlob, {
+      contentType: mimeType,
+      cacheControl: '3600',
+      upsert: false,
+    })
+
+  if (uploadError) {
+    console.error('Direct image upload error:', uploadError)
+
+    return jsonResponse({
+      ok: false,
+      error: `Storage fotoğraf yükleme hatası: ${uploadError.message}`,
+    }, 500)
+  }
+
+  // Var olan kayıt fonksiyonunu kullan: Storage dosyasını doğrula
+  // ve da_question_images tablosuna kaydet.
+  return await registerQuestionImage(adminClient, {
+    question_id: questionId,
+    storage_path: storagePath,
+    original_name: originalName,
+    mime_type: mimeType,
+    size_bytes: sizeBytes,
+  })
+}
+
 
 async function cleanupImageUpload(adminClient: AdminClient, body: Record<string, unknown>) {
   const questionId = String(body.question_id ?? '')
@@ -1178,6 +1282,9 @@ Deno.serve(async (request: Request) => {
     if (action === 'update_exam') return await updateExam(adminClient, body)
     if (action === 'set_question_review') return await setQuestionReview(adminClient, body)
     if (action === 'add_question') return await addQuestion(adminClient, body)
+    if (action === 'upload_question_image_direct') {
+  return await uploadQuestionImageDirect(adminClient, body)
+}  
     if (action === 'create_image_upload') return await createImageUpload(adminClient, body)
     if (action === 'register_question_image') return await registerQuestionImage(adminClient, body)
     if (action === 'cleanup_image_upload') return await cleanupImageUpload(adminClient, body)

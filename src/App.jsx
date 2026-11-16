@@ -149,44 +149,33 @@ async function optimizeImageWithoutQualityLoss(file) {
 }
 
 
+async function fileToBase64(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  const chunkSize = 0x8000
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(
+      ...bytes.subarray(offset, offset + chunkSize)
+    )
+  }
+
+  return btoa(binary)
+}
+
+
 
 function uploadResumableFile(path, signedToken, file, upsert = false) {
-  const SIX_MB = 6 * 1024 * 1024
-
-  // 6 MB ve altındaki görselleri standart Supabase
-  // imzalı yükleme yöntemiyle gönder.
-  if (file.size <= SIX_MB && !upsert) {
-    return supabase.storage
-      .from(IMAGE_BUCKET)
-      .uploadToSignedUrl(path, signedToken, file, {
-        contentType: file.type,
-        cacheControl: '3600',
-      })
-      .then(({ data, error }) => {
-        if (error) {
-          throw new Error(`Fotoğraf yüklenemedi: ${error.message}`)
-        }
-
-        if (!data) {
-          throw new Error('Supabase yükleme sonucu döndürmedi.')
-        }
-
-        return data
-      })
-  }
-
-  // 6 MB üzerindeki görsellerde TUS kullan.
-  const configuredUrl = import.meta.env.VITE_SUPABASE_URL
-
-  if (!configuredUrl) {
-    return Promise.reject(new Error('Supabase URL bulunamadı.'))
-  }
-
-  const projectRef = new URL(configuredUrl).hostname.split('.')[0]
+  const configuredUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
   const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
+  if (!configuredUrl || !publishableKey) {
+    return Promise.reject(new Error('Supabase bağlantı ayarları bulunamadı.'))
+  }
+
+  // İmzalı TUS yüklemesinde proje URL'sini kullan.
   const endpoint =
-    `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable/sign`
+    `${configuredUrl.replace(/\/+$/, '')}/storage/v1/upload/resumable/sign`
 
   return new Promise((resolve, reject) => {
     const upload = new Upload(file, {
@@ -213,7 +202,7 @@ function uploadResumableFile(path, signedToken, file, upsert = false) {
         'cacheControl',
       ],
 
-      chunkSize: SIX_MB,
+      chunkSize: 6 * 1024 * 1024,
       uploadDataDuringCreation: true,
       removeFingerprintOnSuccess: true,
 
@@ -231,23 +220,65 @@ function uploadResumableFile(path, signedToken, file, upsert = false) {
 
 
 
+
+
 async function uploadQuestionImage(questionId, file, token) {
   if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
-    throw new Error(`${file.name}: Yalnızca JPG, PNG veya WebP görselleri yüklenebilir.`)
+    throw new Error(
+      `${file.name}: Yalnızca JPG, PNG veya WebP görselleri yüklenebilir.`
+    )
   }
 
-  // Yalnızca kayıpsız PNG optimizasyonu denenir. Küçülmezse veya işlem başarısızsa
-  // orijinal dosya aynen yüklenir. JPEG ve WebP hiçbir şekilde yeniden kodlanmaz.
   const optimizedFile = await optimizeImageWithoutQualityLoss(file)
-  const uploadTicket = await callAdminFunction('create_image_upload', {
-    question_id: questionId,
-    original_name: file.name,
-    mime_type: optimizedFile.type,
-    size_bytes: optimizedFile.size,
-  }, token)
+
+  // Küçük görselleri doğrudan yönetici Edge Function'ına gönder.
+  // Böylece tarayıcıdan Storage'a ayrı bir yükleme isteği yapılmaz.
+  const MAX_DIRECT_UPLOAD = 2 * 1024 * 1024
+
+  if (optimizedFile.size <= MAX_DIRECT_UPLOAD) {
+    const fileBase64 = await fileToBase64(optimizedFile)
+
+    const result = await callAdminFunction(
+      'upload_question_image_direct',
+      {
+        question_id: questionId,
+        original_name: file.name,
+        mime_type: optimizedFile.type,
+        size_bytes: optimizedFile.size,
+        file_base64: fileBase64,
+      },
+      token
+    )
+
+    if (!result?.image_id) {
+      throw new Error('Sunucu fotoğraf kaydının kimliğini döndürmedi.')
+    }
+
+    return {
+      originalBytes: file.size,
+      storedBytes: optimizedFile.size,
+      wasOptimized: optimizedFile.size < file.size,
+    }
+  }
+
+  // 2 MB üzerindeki görseller için imzalı TUS yüklemesi.
+  const uploadTicket = await callAdminFunction(
+    'create_image_upload',
+    {
+      question_id: questionId,
+      original_name: file.name,
+      mime_type: optimizedFile.type,
+      size_bytes: optimizedFile.size,
+    },
+    token
+  )
 
   try {
-    await uploadResumableFile(uploadTicket.path, uploadTicket.token, optimizedFile)
+    await uploadResumableFile(
+      uploadTicket.path,
+      uploadTicket.token,
+      optimizedFile
+    )
   } catch (uploadError) {
     try {
       await callAdminFunction('cleanup_image_upload', {
@@ -255,8 +286,9 @@ async function uploadQuestionImage(questionId, file, token) {
         storage_path: uploadTicket.path,
       }, token)
     } catch (cleanupError) {
-      console.error('Yükleme başarısızlığından sonra geçici dosya temizlenemedi:', cleanupError)
+      console.error('Geçici fotoğraf temizlenemedi:', cleanupError)
     }
+
     throw uploadError
   }
 
@@ -275,8 +307,9 @@ async function uploadQuestionImage(questionId, file, token) {
         storage_path: uploadTicket.path,
       }, token)
     } catch (cleanupError) {
-      console.error('Görsel kaydı tamamlanamadı ve geçici dosya temizlenemedi:', cleanupError)
+      console.error('Kayıt başarısızlığında geçici dosya temizlenemedi:', cleanupError)
     }
+
     throw registerError
   }
 
@@ -286,6 +319,7 @@ async function uploadQuestionImage(questionId, file, token) {
     wasOptimized: optimizedFile.size < file.size,
   }
 }
+
 
 function readStoredAdminToken() {
   try {
