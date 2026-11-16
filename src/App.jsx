@@ -148,37 +148,68 @@ async function optimizeImageWithoutQualityLoss(file) {
   return file
 }
 
+
 function uploadResumableFile(path, signedToken, file, upsert = false) {
   const configuredUrl = import.meta.env.VITE_SUPABASE_URL
+
+  if (!configuredUrl) {
+    return Promise.reject(
+      new Error('Supabase URL bulunamadı. .env.local dosyasını kontrol et.')
+    )
+  }
+
   const projectRef = new URL(configuredUrl).hostname.split('.')[0]
+  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+
+  if (!publishableKey) {
+    return Promise.reject(
+      new Error('Supabase Publishable Key bulunamadı.')
+    )
+  }
+
   const endpoint = `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable/sign`
 
   return new Promise((resolve, reject) => {
     const upload = new Upload(file, {
       endpoint,
       retryDelays: [0, 3000, 5000, 10000, 20000],
+
       headers: {
-  apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-  'x-signature': signedToken,
-  ...(upsert ? { 'x-upsert': 'true' } : {}),
-},
+        apikey: publishableKey,
+        'x-signature': signedToken,
+        ...(upsert ? { 'x-upsert': 'true' } : {}),
+      },
+
       metadata: {
         bucketName: IMAGE_BUCKET,
         objectName: path,
         contentType: file.type,
         cacheControl: '3600',
       },
-      allowedMetaFields: ['bucketName', 'objectName', 'contentType', 'cacheControl'],
+
+      allowedMetaFields: [
+        'bucketName',
+        'objectName',
+        'contentType',
+        'cacheControl',
+      ],
+
       chunkSize: 6 * 1024 * 1024,
       uploadDataDuringCreation: true,
       removeFingerprintOnSuccess: true,
-      onError: reject,
-      onSuccess: resolve,
+
+      onError: (error) => {
+        console.error('Supabase fotoğraf yükleme hatası:', error)
+        reject(error)
+      },
+
+      onSuccess: () => resolve(),
     })
 
     upload.start()
   })
 }
+
 
 async function uploadQuestionImage(questionId, file, token) {
   if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
