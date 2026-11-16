@@ -149,25 +149,44 @@ async function optimizeImageWithoutQualityLoss(file) {
 }
 
 
+
 function uploadResumableFile(path, signedToken, file, upsert = false) {
+  const SIX_MB = 6 * 1024 * 1024
+
+  // 6 MB ve altındaki görselleri standart Supabase
+  // imzalı yükleme yöntemiyle gönder.
+  if (file.size <= SIX_MB && !upsert) {
+    return supabase.storage
+      .from(IMAGE_BUCKET)
+      .uploadToSignedUrl(path, signedToken, file, {
+        contentType: file.type,
+        cacheControl: '3600',
+      })
+      .then(({ data, error }) => {
+        if (error) {
+          throw new Error(`Fotoğraf yüklenemedi: ${error.message}`)
+        }
+
+        if (!data) {
+          throw new Error('Supabase yükleme sonucu döndürmedi.')
+        }
+
+        return data
+      })
+  }
+
+  // 6 MB üzerindeki görsellerde TUS kullan.
   const configuredUrl = import.meta.env.VITE_SUPABASE_URL
 
   if (!configuredUrl) {
-    return Promise.reject(
-      new Error('Supabase URL bulunamadı. .env.local dosyasını kontrol et.')
-    )
+    return Promise.reject(new Error('Supabase URL bulunamadı.'))
   }
 
   const projectRef = new URL(configuredUrl).hostname.split('.')[0]
   const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
-  if (!publishableKey) {
-    return Promise.reject(
-      new Error('Supabase Publishable Key bulunamadı.')
-    )
-  }
-
-  const endpoint = `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable/sign`
+  const endpoint =
+    `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable/sign`
 
   return new Promise((resolve, reject) => {
     const upload = new Upload(file, {
@@ -194,12 +213,12 @@ function uploadResumableFile(path, signedToken, file, upsert = false) {
         'cacheControl',
       ],
 
-      chunkSize: 6 * 1024 * 1024,
+      chunkSize: SIX_MB,
       uploadDataDuringCreation: true,
       removeFingerprintOnSuccess: true,
 
       onError: (error) => {
-        console.error('Supabase fotoğraf yükleme hatası:', error)
+        console.error('TUS fotoğraf yükleme hatası:', error)
         reject(error)
       },
 
@@ -209,6 +228,7 @@ function uploadResumableFile(path, signedToken, file, upsert = false) {
     upload.start()
   })
 }
+
 
 
 async function uploadQuestionImage(questionId, file, token) {
