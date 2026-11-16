@@ -22,19 +22,22 @@ function dailyDateKey(date) {
 }
 
 function getDailyWeek(offset = 0) {
-  const monday = new Date()
-  monday.setHours(0, 0, 0, 0)
-  const daysSinceMonday = (monday.getDay() + 6) % 7
-  monday.setDate(monday.getDate() - daysSinceMonday + (offset * 7))
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
 
-  const start = new Date(monday)
-  start.setDate(start.getDate() - 6) // Salı
-  const end = new Date(monday)
-  end.setDate(end.getDate() - 1) // Pazar
+  // Pazartesi önceki haftayı korur; Salı yeni haftayı başlatır.
+  const daysSinceTuesday = (today.getDay() + 5) % 7
+
+  const start = new Date(today)
+  start.setDate(today.getDate() - daysSinceTuesday + (offset * 7))
+
+  const end = new Date(start)
+  end.setDate(start.getDate() + 5)
 
   const dates = DAILY_DAYS.map((day, index) => {
     const date = new Date(start)
     date.setDate(start.getDate() + index)
+
     return {
       ...day,
       date,
@@ -44,7 +47,7 @@ function getDailyWeek(offset = 0) {
         month: 'long',
         year: 'numeric',
       }).format(date),
-      isToday: dailyDateKey(date) === dailyDateKey(new Date()),
+      isToday: dailyDateKey(date) === dailyDateKey(today),
     }
   })
 
@@ -316,6 +319,19 @@ function DailyActivityDayCard({ day, contentHtml, adminToken, saving, onSave, on
 
 export default function DailyActivitiesPlanner({ adminToken }) {
   const [weekOffset, setWeekOffset] = useState(0)
+  const [calendarDateKey, setCalendarDateKey] = useState(() => dailyDateKey(new Date()))
+
+useEffect(() => {
+  const timer = window.setInterval(() => {
+    const currentDateKey = dailyDateKey(new Date())
+
+    setCalendarDateKey((previousDateKey) => (
+      previousDateKey === currentDateKey ? previousDateKey : currentDateKey
+    ))
+  }, 10000)
+
+  return () => window.clearInterval(timer)
+}, [])
   const [records, setRecords] = useState({})
   const [loading, setLoading] = useState(true)
   const [savingDate, setSavingDate] = useState('')
@@ -323,7 +339,10 @@ export default function DailyActivitiesPlanner({ adminToken }) {
   const [notice, setNotice] = useState('')
   const [dirtyDates, setDirtyDates] = useState([])
 
-  const week = useMemo(() => getDailyWeek(weekOffset), [weekOffset])
+  const week = useMemo(
+  () => getDailyWeek(weekOffset),
+  [weekOffset, calendarDateKey]
+)
 
   useEffect(() => {
     let cancelled = false
