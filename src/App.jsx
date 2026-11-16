@@ -2773,20 +2773,26 @@ const activeTheme = screenThemes[screenTheme]
   }
 
   const buttonStyle = (active = false, close = false) => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    minHeight: 38,
-    padding: '8px 12px',
-    borderRadius: 9,
-    border: active ? '1px solid #93c5fd' : '1px solid #cbd5e1',
-    background: close ? '#b91c1c' : active ? '#1d4ed8' : '#f8fafc',
-    color: close || active ? '#ffffff' : '#172033',
-    fontSize: 13,
-    fontWeight: 650,
-    cursor: 'pointer',
-  })
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 7,
+  minHeight: 38,
+  padding: '8px 12px',
+  borderRadius: 9,
+  border: active
+    ? '1px solid #93c5fd'
+    : `1px solid ${activeTheme.border}`,
+  background: close
+    ? '#b91c1c'
+    : active
+      ? '#1d4ed8'
+      : activeTheme.control,
+  color: close || active ? '#ffffff' : activeTheme.text,
+  fontSize: 13,
+  fontWeight: 650,
+  cursor: 'pointer',
+})
 
   return (
     <div
@@ -2799,8 +2805,8 @@ const activeTheme = screenThemes[screenTheme]
         zIndex: 10000,
         display: 'flex',
         flexDirection: 'column',
-        background: '#ffffff',
-        color: '#172033',
+        background: activeTheme.background,
+        color: activeTheme.text,
         padding: 'max(8px, env(safe-area-inset-top)) 10px max(8px, env(safe-area-inset-bottom))',
         boxSizing: 'border-box',
       }}
@@ -2814,7 +2820,7 @@ const activeTheme = screenThemes[screenTheme]
           gap: 12,
           flexWrap: 'wrap',
           padding: '4px 2px 10px',
-          background: '#ffffff',
+          background: activeTheme.panel,
         }}
       >
         <div>
@@ -2822,7 +2828,7 @@ const activeTheme = screenThemes[screenTheme]
             Geçici soru çözüm alanı
           </strong>
 
-          <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: '#64748b' }}>
+          <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: activeTheme.muted }}>
             Görselin dışındaki beyaz alanı da kullanabilirsin.
             Çizimlerin kaydedilmez.
           </span>
@@ -2911,7 +2917,7 @@ const activeTheme = screenThemes[screenTheme]
           gap: 8,
           flexWrap: 'wrap',
           padding: '9px 0 11px',
-          background: '#ffffff',
+          background: activeTheme.panel,
         }}
       >
         <button
@@ -2932,7 +2938,7 @@ const activeTheme = screenThemes[screenTheme]
           ⌫ Silgi
         </button>
 
-        <span style={{ width: 1, height: 26, background: '#cbd5e1' }} />
+        <span style={{ width: 1, height: 26, background: activeTheme.border }} />
 
         {['#e53935', '#2563eb', '#16a34a', '#111827'].map((swatch) => (
           <button
@@ -2965,7 +2971,7 @@ const activeTheme = screenThemes[screenTheme]
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            color: '#475569',
+            color: activeTheme.muted,
             fontSize: 12,
           }}
         >
@@ -2978,9 +2984,9 @@ const activeTheme = screenThemes[screenTheme]
               minHeight: 34,
               borderRadius: 8,
               padding: '4px 7px',
-              color: '#0f172a',
-              background: '#ffffff',
-              border: '1px solid #cbd5e1',
+              color: activeTheme.text,
+              background: activeTheme.control,
+              border: `1px solid ${activeTheme.border}`,
             }}
           >
             <option value="2">İnce</option>
@@ -3017,8 +3023,8 @@ const activeTheme = screenThemes[screenTheme]
           minHeight: 0,
           width: '100%',
           overflow: 'hidden',
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
+          background: activeTheme.canvas,
+          border: `1px solid ${activeTheme.border}`,
           borderRadius: 8,
           boxSizing: 'border-box',
           touchAction: 'none',
