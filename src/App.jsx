@@ -1434,6 +1434,7 @@ function WeeklyAnalysisPage({ exams, weekOffset, onWeekOffsetChange, adminToken,
   const [savingPermanent, setSavingPermanent] = useState(false)
   const [savingWeekly, setSavingWeekly] = useState(false)
   const [noteStatus, setNoteStatus] = useState('')
+  const [annotatingImage, setAnnotatingImage] = useState(null)
 
   const range = useMemo(() => getWeekRange(weekOffset), [weekOffset])
   const rangeLabel = `${formatShortDate(range.start)} – ${formatShortDate(range.end)} ${range.end.getFullYear()}`
@@ -1852,7 +1853,7 @@ function WeeklyAnalysisPage({ exams, weekOffset, onWeekOffsetChange, adminToken,
                     {question.images?.length > 0 && (
                       <div className="weekly-question-images">
                         {question.images.map((image) => (
-                          <button type="button" key={image.id} onClick={() => window.open(image.url, '_blank', 'noopener,noreferrer')} title="Orijinal görseli yeni sekmede aç">
+                          <button type="button" key={image.id} onClick={() => setAnnotatingImage(image)} title="Geçici çizim alanında aç">
                             <img src={image.url} alt={image.name || 'Soru görseli'} loading="lazy" />
                           </button>
                         ))}
@@ -1906,6 +1907,12 @@ function WeeklyAnalysisPage({ exams, weekOffset, onWeekOffsetChange, adminToken,
         {notesError && <div className="weekly-note-error" role="alert">{notesError}</div>}
         {noteStatus && <div className="weekly-note-status" role="status">{noteStatus}</div>}
       </section>
+      {annotatingImage && (
+        <TemporaryImageAnnotator
+          image={annotatingImage}
+          onClose={() => setAnnotatingImage(null)}
+        />
+      )}
     </section>
   )
 }
@@ -2332,6 +2339,611 @@ function MonthlyReportPreview({ report, onOpenExam }) {
   )
 }
 
+
+function TemporaryImageAnnotator({ image, onClose }) {
+  const workspaceRef = useRef(null)
+  const canvasRef = useRef(null)
+  const strokesRef = useRef([])
+  const activeStrokeRef = useRef(null)
+
+  const [tool, setTool] = useState('pen')
+  const [color, setColor] = useState('#e53935')
+  const [strokeSize, setStrokeSize] = useState('3')
+  const [canvasReady, setCanvasReady] = useState(false)
+  const [screenTheme, setScreenTheme] = useState('white')
+const [themeMenuOpen, setThemeMenuOpen] = useState(false)
+
+const screenThemes = {
+  white: {
+    label: 'Beyaz',
+    background: '#ffffff',
+    panel: '#ffffff',
+    canvas: '#ffffff',
+    text: '#172033',
+    muted: '#64748b',
+    border: '#e2e8f0',
+    control: '#f8fafc',
+    swatch: '#ffffff',
+  },
+  black: {
+    label: 'Siyah',
+    background: '#080b12',
+    panel: '#10141e',
+    canvas: '#090d16',
+    text: '#f8fafc',
+    muted: '#a1a1aa',
+    border: '#303744',
+    control: '#1b2230',
+    swatch: '#090d16',
+  },
+  navy: {
+    label: 'Koyu mavi',
+    background: '#101b2b',
+    panel: '#142238',
+    canvas: '#17263c',
+    text: '#e6edf7',
+    muted: '#a9b8cc',
+    border: '#30445f',
+    control: '#21334c',
+    swatch: '#17263c',
+  },
+}
+
+const activeTheme = screenThemes[screenTheme]
+
+  // Tüm beyaz çalışma alanını çizim katmanına dönüştürür.
+  const redrawCanvas = useCallback(() => {
+    const canvas = canvasRef.current
+    const workspace = workspaceRef.current
+
+    if (!canvas || !workspace) return
+
+    const context = canvas.getContext('2d')
+    const rect = workspace.getBoundingClientRect()
+
+    if (!context || !rect.width || !rect.height) return
+
+    context.clearRect(0, 0, rect.width, rect.height)
+
+    for (const stroke of strokesRef.current) {
+      if (!stroke.points.length) continue
+
+      context.globalCompositeOperation =
+        stroke.tool === 'eraser' ? 'destination-out' : 'source-over'
+
+      context.strokeStyle = stroke.color
+      context.fillStyle = stroke.color
+      context.lineWidth = stroke.width
+      context.lineCap = 'round'
+      context.lineJoin = 'round'
+
+      const first = stroke.points[0]
+      const firstX = first.x * rect.width
+      const firstY = first.y * rect.height
+
+      if (stroke.points.length === 1) {
+        context.beginPath()
+        context.arc(firstX, firstY, stroke.width / 2, 0, Math.PI * 2)
+        context.fill()
+      } else {
+        context.beginPath()
+        context.moveTo(firstX, firstY)
+
+        for (let i = 1; i < stroke.points.length; i++) {
+          const point = stroke.points[i]
+          context.lineTo(
+            point.x * rect.width,
+            point.y * rect.height
+          )
+        }
+
+        context.stroke()
+      }
+    }
+
+    context.globalCompositeOperation = 'source-over'
+  }, [])
+
+  // Ekran boyutu değişirse çizim alanını yeniden ayarlar.
+  const resizeCanvas = useCallback(() => {
+    const workspace = workspaceRef.current
+    const canvas = canvasRef.current
+
+    if (!workspace || !canvas) return
+
+    const rect = workspace.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
+
+    const pixelRatio = window.devicePixelRatio || 1
+
+    canvas.width = Math.round(rect.width * pixelRatio)
+    canvas.height = Math.round(rect.height * pixelRatio)
+
+    const context = canvas.getContext('2d')
+    if (!context) return
+
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+
+    setCanvasReady(true)
+    redrawCanvas()
+  }, [redrawCanvas])
+
+  useEffect(() => {
+    const workspace = workspaceRef.current
+    if (!workspace) return undefined
+
+    resizeCanvas()
+
+    const handleResize = () => resizeCanvas()
+
+    window.addEventListener('resize', handleResize)
+
+    let observer
+
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(handleResize)
+      observer.observe(workspace)
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('keydown', handleKeyDown)
+
+      observer?.disconnect()
+
+      document.body.style.overflow = previousOverflow
+    }
+  }, [image?.url, onClose, resizeCanvas])
+
+  // Fare veya dokunmatik kalem konumunu hesaplar.
+  const getPoint = (event) => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+
+    const rect = canvas.getBoundingClientRect()
+
+    if (!rect.width || !rect.height) return null
+
+    return {
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+    }
+  }
+
+  const startDrawing = (event) => {
+    if (!canvasReady) return
+
+    event.preventDefault()
+
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    const point = getPoint(event)
+
+    if (!canvas || !context || !point) return
+
+    try {
+      canvas.setPointerCapture(event.pointerId)
+    } catch {
+      // Pointer capture desteklenmiyorsa çizim yine devam eder.
+    }
+
+    const stroke = {
+      tool,
+      color,
+      width: tool === 'eraser'
+        ? Math.max(18, Number(strokeSize) * 6)
+        : Number(strokeSize),
+      points: [point],
+    }
+
+    strokesRef.current.push(stroke)
+    activeStrokeRef.current = stroke
+
+    const rect = canvas.getBoundingClientRect()
+
+    context.globalCompositeOperation =
+      tool === 'eraser' ? 'destination-out' : 'source-over'
+
+    context.fillStyle = color
+    context.beginPath()
+    context.arc(
+      point.x * rect.width,
+      point.y * rect.height,
+      stroke.width / 2,
+      0,
+      Math.PI * 2
+    )
+    context.fill()
+
+    context.globalCompositeOperation = 'source-over'
+  }
+
+  const continueDrawing = (event) => {
+    const stroke = activeStrokeRef.current
+    if (!stroke) return
+
+    event.preventDefault()
+
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    const point = getPoint(event)
+
+    if (!canvas || !context || !point) return
+
+    const previous = stroke.points[stroke.points.length - 1]
+    stroke.points.push(point)
+
+    const rect = canvas.getBoundingClientRect()
+
+    context.globalCompositeOperation =
+      stroke.tool === 'eraser' ? 'destination-out' : 'source-over'
+
+    context.strokeStyle = stroke.color
+    context.lineWidth = stroke.width
+    context.lineCap = 'round'
+    context.lineJoin = 'round'
+
+    context.beginPath()
+    context.moveTo(
+      previous.x * rect.width,
+      previous.y * rect.height
+    )
+    context.lineTo(
+      point.x * rect.width,
+      point.y * rect.height
+    )
+    context.stroke()
+
+    context.globalCompositeOperation = 'source-over'
+  }
+
+  const stopDrawing = (event) => {
+    if (!activeStrokeRef.current) return
+
+    activeStrokeRef.current = null
+
+    const context = canvasRef.current?.getContext('2d')
+    if (context) {
+      context.globalCompositeOperation = 'source-over'
+    }
+
+    try {
+      if (event?.pointerId !== undefined) {
+        canvasRef.current?.releasePointerCapture(event.pointerId)
+      }
+    } catch {
+      // İşaretçi yakalaması zaten bırakılmış olabilir.
+    }
+  }
+
+  const undoLastStroke = () => {
+    if (!strokesRef.current.length) return
+
+    strokesRef.current.pop()
+    redrawCanvas()
+  }
+
+  const clearDrawing = () => {
+    strokesRef.current = []
+    activeStrokeRef.current = null
+    redrawCanvas()
+  }
+
+  const buttonStyle = (active = false, close = false) => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 7,
+  minHeight: 38,
+  padding: '8px 12px',
+  borderRadius: 9,
+  border: active
+    ? '1px solid #93c5fd'
+    : `1px solid ${activeTheme.border}`,
+  background: close
+    ? '#b91c1c'
+    : active
+      ? '#1d4ed8'
+      : activeTheme.control,
+  color: close || active ? '#ffffff' : activeTheme.text,
+  fontSize: 13,
+  fontWeight: 650,
+  cursor: 'pointer',
+})
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Geçici soru çözüm alanı"
+      style={{
+        
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10000,
+        display: 'flex',
+        flexDirection: 'column',
+        background: activeTheme.background,
+        color: activeTheme.text,
+        padding: 'max(8px, env(safe-area-inset-top)) 10px max(8px, env(safe-area-inset-bottom))',
+        boxSizing: 'border-box',
+      }}
+    >
+      {/* ÜST BAŞLIK VE KAPATMA */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
+          padding: '4px 2px 10px',
+          background: activeTheme.panel,
+        }}
+      >
+        <div>
+          <strong style={{ display: 'block', fontSize: 16 }}>
+            Geçici soru çözüm alanı
+          </strong>
+
+          <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: activeTheme.muted }}>
+            Görselin dışındaki beyaz alanı da kullanabilirsin.
+            Çizimlerin kaydedilmez.
+          </span>
+        </div>
+
+        <div style={{
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  position: 'relative'
+}}>
+  <button
+    type="button"
+    onClick={() => setThemeMenuOpen((open) => !open)}
+    style={buttonStyle(themeMenuOpen)}
+  >
+    ◐ Renk
+  </button>
+
+  <button
+    type="button"
+    onClick={onClose}
+    style={{ ...buttonStyle(false, true), minWidth: 86 }}
+  >
+    ✕ Kapat
+  </button>
+
+  {themeMenuOpen && (
+    <div style={{
+      position: 'absolute',
+      top: 'calc(100% + 8px)',
+      right: 0,
+      zIndex: 20,
+      minWidth: 160,
+      padding: 7,
+      border: `1px solid ${activeTheme.border}`,
+      borderRadius: 12,
+      background: activeTheme.panel,
+      boxShadow: '0 12px 30px rgba(0,0,0,.25)'
+    }}>
+      {Object.entries(screenThemes).map(([key, option]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => {
+            setScreenTheme(key)
+            setThemeMenuOpen(false)
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            width: '100%',
+            padding: 10,
+            marginBottom: 4,
+            border: screenTheme === key
+              ? '1px solid #3b82f6'
+              : `1px solid ${activeTheme.border}`,
+            borderRadius: 8,
+            background: activeTheme.control,
+            color: activeTheme.text,
+            cursor: 'pointer'
+          }}
+        >
+          <span style={{
+            width: 18,
+            height: 18,
+            borderRadius: '50%',
+            background: option.swatch,
+            border: '1px solid #94a3b8'
+          }} />
+          {option.label}
+          {screenTheme === key ? ' ✓' : ''}
+        </button>
+      ))}
+    </div>
+  )}
+</div>
+      </div>
+
+      {/* KALEM VE SİLGİ ARAÇLARI */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+          padding: '9px 0 11px',
+          background: activeTheme.panel,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setTool('pen')}
+          aria-pressed={tool === 'pen'}
+          style={buttonStyle(tool === 'pen')}
+        >
+          ✎ Kalem
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTool('eraser')}
+          aria-pressed={tool === 'eraser'}
+          style={buttonStyle(tool === 'eraser')}
+        >
+          ⌫ Silgi
+        </button>
+
+        <span style={{ width: 1, height: 26, background: '#cbd5e1' }} />
+
+        {['#e53935', '#2563eb', '#16a34a', '#111827', '#ffffff'].map((swatch) => (
+          <button
+            key={swatch}
+            type="button"
+            onClick={() => {
+              setColor(swatch)
+              setTool('pen')
+            }}
+            aria-label={`Kalem rengi ${swatch}`}
+            aria-pressed={color === swatch && tool === 'pen'}
+            style={{
+              width: 27,
+              height: 27,
+              borderRadius: '50%',
+              border: color === swatch && tool === 'pen'
+                ? '3px solid #ffffff'
+                : '2px solid #cbd5e1',
+              background: swatch,
+              cursor: 'pointer',
+              boxShadow: color === swatch && tool === 'pen'
+                ? '0 0 0 2px #2563eb'
+                : 'none',
+            }}
+          />
+        ))}
+
+        <label
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            color: activeTheme.muted,
+            fontSize: 12,
+          }}
+        >
+          Kalınlık
+
+          <select
+            value={strokeSize}
+            onChange={(event) => setStrokeSize(event.target.value)}
+            style={{
+              minHeight: 34,
+              borderRadius: 8,
+              padding: '4px 7px',
+              color: activeTheme.text,
+              background: activeTheme.control,
+              border: `1px solid ${activeTheme.border}`,
+            }}
+          >
+            <option value="2">İnce</option>
+            <option value="3">Orta</option>
+            <option value="6">Kalın</option>
+          </select>
+        </label>
+
+        <span style={{ flex: 1 }} />
+
+        <button
+          type="button"
+          onClick={undoLastStroke}
+          style={buttonStyle()}
+        >
+          ↶ Geri al
+        </button>
+
+        <button
+          type="button"
+          onClick={clearDrawing}
+          style={buttonStyle()}
+        >
+          Temizle
+        </button>
+      </div>
+
+      {/* TAM BEYAZ ÇALIŞMA ALANI */}
+      <div
+        ref={workspaceRef}
+        style={{
+          position: 'relative',
+          flex: 1,
+          minHeight: 0,
+          width: '100%',
+          overflow: 'hidden',
+          background: activeTheme.canvas,
+          border: `1px solid ${activeTheme.border}`,
+          borderRadius: 8,
+          boxSizing: 'border-box',
+          touchAction: 'none',
+        }}
+      >
+        {/* SORU GÖRSELİ */}
+        <img
+          src={image?.url}
+          alt={image?.name || 'Soru görseli'}
+          draggable="false"
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            display: 'block',
+            maxWidth: '100%',
+            maxHeight: '100%',
+            width: 'auto',
+            height: 'auto',
+            objectFit: 'contain',
+            userSelect: 'none',
+            pointerEvents: 'none',
+          }}
+        />
+
+        {/* ÇİZİM KATMANI: GÖRSELİN DIŞINDAKİ BEYAZ ALAN DAHİL */}
+        <canvas
+          ref={canvasRef}
+          onPointerDown={startDrawing}
+          onPointerMove={continueDrawing}
+          onPointerUp={stopDrawing}
+          onPointerCancel={stopDrawing}
+          onLostPointerCapture={stopDrawing}
+          aria-label="Tüm beyaz çalışma alanında geçici çizim katmanı"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            display: 'block',
+            width: '100%',
+            height: '100%',
+            cursor: tool === 'eraser' ? 'cell' : 'crosshair',
+            touchAction: 'none',
+            userSelect: 'none',
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
 function ExamRow({ exam, onClick }) {
   return (
     <button className="exam-row" onClick={onClick} type="button">
@@ -2350,6 +2962,8 @@ function ExamRow({ exam, onClick }) {
 }
 
 function ExamDetail({ exam, isAdmin, onAddImages, onAddQuestion, onDeleteImage, onDeleteAllImages, onDeleteExam, onEditExam, onToggleReview, reviewUpdatingId }) {
+  const [annotatingImage, setAnnotatingImage] = useState(null)
+
   return (
     <div className="detail-layout">
       {isAdmin && (
@@ -2407,9 +3021,15 @@ function ExamDetail({ exam, isAdmin, onAddImages, onAddQuestion, onDeleteImage, 
                     <div className="question-image-row">
                       {question.images.map((image) => (
                         <div className="question-image-item" key={image.id}>
-                          <a href={image.url} target="_blank" rel="noreferrer" title={image.name || 'Soru görselini aç'}>
+                          <button
+                            type="button"
+                            onClick={() => setAnnotatingImage(image)}
+                            title="Soruyu çizim alanında aç"
+                            aria-label={`Soru ${question.number ?? ''} görselini çizim alanında aç`}
+                            style={{ display: 'block', maxWidth: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'crosshair' }}
+                          >
                             <img src={image.url} alt={image.name || `Soru ${question.number} görseli`} />
-                          </a>
+                          </button>
                           {isAdmin && <button className="photo-delete-button" type="button" onClick={() => onDeleteImage(image)} aria-label="Fotoğrafı sil" title="Fotoğrafı sil">×</button>}
                         </div>
                       ))}
@@ -2460,6 +3080,12 @@ function ExamDetail({ exam, isAdmin, onAddImages, onAddQuestion, onDeleteImage, 
           </div>
         )}
       </section>
+      {annotatingImage && (
+        <TemporaryImageAnnotator
+          image={annotatingImage}
+          onClose={() => setAnnotatingImage(null)}
+        />
+      )}
     </div>
   )
 }
