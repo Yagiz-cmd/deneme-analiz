@@ -777,6 +777,17 @@ function App() {
             <span>Aylık raporlar</span>
             <span className="nav-chevron">›</span>
           </button>
+          <button
+          className={`sidebar-link ${page === 'daily' ? 'active' : ''}`}
+          onClick={() => {
+          setPage('daily')
+          setSelectedExam(null)
+            }}
+           >
+                <span className="nav-symbol">▤</span>
+               <span>Günlük yapılanlar</span>
+                <span className="nav-chevron">›</span>
+               </button>
           {adminToken && (
             <button className={`sidebar-link ${page === 'backup' ? 'active' : ''}`} onClick={() => { setPage('backup'); setSelectedExam(null) }}>
               <span className="nav-symbol">⇧</span>
@@ -910,7 +921,11 @@ function App() {
               onOpenExam={openExam}
             />
           )}
-
+            {page === 'daily' && (
+                 <section className="subpage-section daily-page">
+                <DailyActivitiesPlanner adminToken={adminToken} />
+               </section>
+              )}
           {page === 'backup' && adminToken && (
             <BackupStoragePage
               adminToken={adminToken}
@@ -2212,7 +2227,7 @@ function MonthlyReportsPage({ exams, adminToken, onOpenExam }) {
         </section>
       )}
 
-      <DailyActivitiesPlanner adminToken={adminToken} />
+      
 
       {cleanupOpen && adminToken && (
         <div className="monthly-modal-backdrop" role="presentation">
