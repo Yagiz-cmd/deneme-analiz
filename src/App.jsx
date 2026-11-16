@@ -157,13 +157,18 @@ function uploadResumableFile(path, signedToken, file, upsert = false) {
     const upload = new Upload(file, {
       endpoint,
       retryDelays: [0, 3000, 5000, 10000, 20000],
-      headers: { 'x-signature': signedToken, ...(upsert ? { 'x-upsert': 'true' } : {}) },
+      headers: {
+  apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  'x-signature': signedToken,
+  ...(upsert ? { 'x-upsert': 'true' } : {}),
+},
       metadata: {
         bucketName: IMAGE_BUCKET,
         objectName: path,
         contentType: file.type,
         cacheControl: '3600',
       },
+      allowedMetaFields: ['bucketName', 'objectName', 'contentType', 'cacheControl'],
       chunkSize: 6 * 1024 * 1024,
       uploadDataDuringCreation: true,
       removeFingerprintOnSuccess: true,
