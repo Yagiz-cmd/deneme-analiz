@@ -1,0 +1,53 @@
+.daily-activities-panel { display:grid; gap:16px; margin-top:18px; padding:18px; }
+.daily-planner-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+.daily-planner-heading h2 { margin:4px 0 5px; color:var(--text); font:800 19px Manrope,sans-serif; }
+.daily-planner-heading p { margin:0; color:var(--muted); font-size:11px; line-height:1.6; }
+.daily-admin-pill,.daily-viewer-pill { flex-shrink:0; padding:7px 10px; border:1px solid var(--border); border-radius:999px; color:var(--muted); background:var(--surface-2); font-size:9px; font-weight:800; }
+.daily-admin-pill { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 35%,var(--border)); }
+.daily-week-navigation { display:flex; align-items:center; gap:12px; padding:11px 12px; border:1px solid var(--border-soft); border-radius:13px; background:var(--surface-2); }
+.daily-week-arrow { width:36px; height:36px; border:1px solid var(--border); border-radius:10px; color:var(--text); background:var(--surface); font-size:24px; line-height:1; cursor:pointer; }
+.daily-week-title { display:grid; gap:3px; min-width:0; flex:1; text-align:center; }
+.daily-week-title strong { color:var(--text); font:800 13px Manrope,sans-serif; }
+.daily-week-title span { color:var(--muted); font-size:9px; }
+.daily-current-week { padding:8px 11px; border:1px solid var(--border); border-radius:9px; color:var(--text); background:var(--surface); font-size:10px; font-weight:750; cursor:pointer; }
+.daily-days-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.daily-day-card { display:flex; flex-direction:column; min-width:0; min-height:350px; padding:14px; border:1px solid var(--border-soft); border-radius:14px; background:var(--surface); box-shadow:0 5px 16px rgba(0,0,0,.035); }
+.daily-day-card.is-today { border-color:color-mix(in srgb,var(--accent) 55%,var(--border)); box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 15%,transparent); }
+.daily-day-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding-bottom:11px; border-bottom:1px solid var(--border-soft); }
+.daily-day-heading > div:first-child { display:grid; gap:3px; }
+.daily-day-name { color:var(--accent); font:850 12px Manrope,sans-serif; }
+.daily-day-heading strong { color:var(--text); font-size:10px; }
+.daily-day-state { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:5px; }
+.daily-today-pill,.daily-unsaved-pill,.daily-saved-pill { padding:4px 7px; border-radius:999px; font-size:8px; font-weight:800; white-space:nowrap; }
+.daily-today-pill { color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,var(--surface)); }
+.daily-unsaved-pill { color:#b7791f; background:rgba(217,153,46,.13); }
+.daily-saved-pill { color:#19875c; background:rgba(25,135,92,.12); }
+.daily-editor-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:5px; padding:9px 0; }
+.daily-format-button { width:29px; height:29px; border:1px solid var(--border); border-radius:7px; color:var(--text); background:var(--surface-2); font-size:12px; font-weight:800; cursor:pointer; }
+.daily-format-button:hover,.daily-clear-format:hover { border-color:var(--accent); }
+.daily-format-button.format-italic { font-style:italic; }
+.daily-format-button.format-underline { text-decoration:underline; }
+.daily-format-select { min-height:29px; max-width:78px; padding:3px 5px; border:1px solid var(--border); border-radius:7px; color:var(--text); background:var(--surface-2); font-size:9px; }
+.daily-color-palette { display:flex; align-items:center; gap:4px; padding-left:3px; }
+.daily-color-swatch { width:16px; height:16px; padding:0; border:1px solid rgba(128,128,128,.6); border-radius:50%; cursor:pointer; }
+.daily-clear-format { min-height:28px; margin-left:auto; padding:4px 7px; border:1px solid var(--border); border-radius:7px; color:var(--muted); background:var(--surface-2); font-size:8px; cursor:pointer; }
+.daily-rich-editor,.daily-readonly-content { flex:1; min-height:190px; padding:12px; border:1px solid var(--border-soft); border-radius:10px; color:var(--text); background:var(--surface-2); font-size:13px; line-height:1.65; overflow-wrap:anywhere; }
+.daily-rich-editor { outline:none; cursor:text; white-space:pre-wrap; }
+.daily-rich-editor:focus { border-color:color-mix(in srgb,var(--accent) 60%,var(--border)); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent); }
+.daily-rich-editor:empty::before { content:attr(data-placeholder); color:var(--muted-2); pointer-events:none; }
+.daily-rich-editor ul,.daily-rich-editor ol,.daily-readonly-content ul,.daily-readonly-content ol { padding-left:22px; }
+.daily-rich-editor p,.daily-readonly-content p { margin:0 0 7px; }
+.daily-readonly-content { white-space:normal; }
+.daily-empty-copy { color:var(--muted-2); font-size:10px; }
+.daily-card-footer { display:flex; align-items:center; justify-content:space-between; gap:9px; padding-top:10px; }
+.daily-card-footer > span { color:var(--muted-2); font-size:8px; line-height:1.4; }
+.daily-save-button { flex-shrink:0; min-height:34px; padding:7px 11px; border:1px solid var(--accent); border-radius:9px; color:#fff; background:var(--accent); font-size:9px; font-weight:800; cursor:pointer; }
+.daily-save-button:disabled { opacity:.45; cursor:not-allowed; }
+.daily-format-error { margin-top:7px; color:#d35d67; font-size:9px; }
+.daily-message { padding:10px 12px; border:1px solid var(--border); border-radius:10px; font-size:10px; line-height:1.5; }
+.daily-error { color:#d35d67; background:rgba(211,93,103,.08); }
+.daily-success { color:#19875c; background:rgba(25,135,92,.08); }
+.daily-loading { padding:25px 10px; color:var(--muted); text-align:center; font-size:11px; }
+.daily-planner-footnote { color:var(--muted-2); font-size:9px; line-height:1.5; }
+@media (max-width:900px) { .daily-days-grid { grid-template-columns:1fr; } .daily-day-card { min-height:320px; } }
+@media (max-width:560px) { .daily-activities-panel { padding:13px; } .daily-planner-heading { flex-direction:column; } .daily-week-navigation { gap:7px; padding:8px; } .daily-week-title strong { font-size:11px; } .daily-current-week { font-size:9px; padding:7px; } .daily-card-footer { align-items:flex-end; } }

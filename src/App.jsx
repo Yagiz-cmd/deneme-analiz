@@ -9,6 +9,7 @@ import { buildMonthlyReportData, formatReportDate, formatReportNumber } from './
 import { downloadMonthlyReportDocx } from './monthly-report-docx'
 import { createBackupZip, readBackupZip, formatBytes } from './backup-archive'
 import './backup-storage.css'
+import DailyActivitiesPlanner from './DailyActivitiesPlanner'
 
 const subjects = [
   'AYT Matematik', 'AYT Fizik', 'AYT Kimya', 'AYT Biyoloji',
@@ -506,6 +507,22 @@ function App() {
     setDetailError('')
   }
 
+  // Mobilde yönetici giriş penceresini açmak için marka logosuna 5 kez dokunulabilir.
+  // Gerçek erişim yine sunucuda doğrulanan yönetici parolasını gerektirir.
+  const mobileAdminTapRef = useRef({ count: 0, lastTap: 0 })
+  const handleBrandPress = () => {
+    goHome()
+    const now = Date.now()
+    const taps = mobileAdminTapRef.current
+    if (now - taps.lastTap > 2200) taps.count = 0
+    taps.count += 1
+    taps.lastTap = now
+    if (taps.count >= 5) {
+      taps.count = 0
+      setShowAdminLogin(true)
+    }
+  }
+
   const handleAdminLogin = async (password) => {
     const result = await callAdminFunction('login', { password })
     if (!result.token) throw new Error('Sunucu oturum anahtarı döndürmedi.')
@@ -713,7 +730,7 @@ function App() {
   return (
     <div className={`app-shell ${theme}`}>
       <header className="topbar">
-        <button className="brand" onClick={goHome} aria-label="Ana sayfa">
+        <button className="brand" onClick={handleBrandPress} aria-label="Ana sayfa; mobilde beş kez dokunarak yönetici girişini aç">
           <span className="brand-mark">D</span>
           <span className="brand-name">deneme<span>analiz</span></span>
         </button>
@@ -1006,7 +1023,9 @@ function validateBackupManifest(manifest, files) {
   if (!manifest || manifest.formatVersion !== 1 || !manifest.tables || !Array.isArray(manifest.storageObjects)) {
     throw new Error('Bu dosya Deneme Analiz V1 yedek biçiminde değil.')
   }
-  const requiredTables = ['exams', 'topicResults', 'questions', 'questionImages', 'analysisNotes', 'weeklyNotes', 'monthlyReports']
+  // Eski V1 yedeklerinde günlük yapılanlar tablosu bulunmayabilir.
+  if (!Array.isArray(manifest.tables.dailyActivities)) manifest.tables.dailyActivities = []
+  const requiredTables = ['exams', 'topicResults', 'questions', 'questionImages', 'analysisNotes', 'weeklyNotes', 'monthlyReports', 'dailyActivities']
   for (const tableName of requiredTables) {
     if (!Array.isArray(manifest.tables[tableName])) throw new Error(`Yedekte “${tableName}” tablosu eksik.`)
   }
@@ -1096,7 +1115,7 @@ async function buildFullBackupArchive(adminToken, onProgress = () => {}) {
   zipEntries.push({
     name: 'README.txt',
     bytes: new TextEncoder().encode(
-      'Deneme Analiz tam yedeği\n\nBu ZIP; deneme, konu, soru, görsel metaverisi, haftalık not, kalıcı not ve aylık rapor kayıtlarını içerir. storage/ klasörü soru görsellerinin orijinal dosyalarını barındırır.\n\nGeri yükleme yalnızca Deneme Analiz yönetici alanından yapılmalıdır. ZIP içeriğini değiştirmeyin.\n',
+      'Deneme Analiz tam yedeği\n\nBu ZIP; deneme, konu, soru, görsel metaverisi, haftalık not, günlük yapılanlar, kalıcı not ve aylık rapor kayıtlarını içerir. storage/ klasörü soru görsellerinin orijinal dosyalarını barındırır.\n\nGeri yükleme yalnızca Deneme Analiz yönetici alanından yapılmalıdır. ZIP içeriğini değiştirmeyin.\n',
     ),
   })
 
@@ -1257,7 +1276,7 @@ function BackupStoragePage({ adminToken, onRestoreComplete }) {
 
       const restoreOrder = [
         'exams', 'topicResults', 'questions', 'questionImages',
-        'analysisNotes', 'weeklyNotes', 'monthlyReports',
+        'analysisNotes', 'weeklyNotes', 'monthlyReports', 'dailyActivities',
       ]
       for (const tableKey of restoreOrder) {
         const rows = backup.manifest.tables[tableKey]
@@ -2193,6 +2212,8 @@ function MonthlyReportsPage({ exams, adminToken, onOpenExam }) {
         </section>
       )}
 
+      <DailyActivitiesPlanner adminToken={adminToken} />
+
       {cleanupOpen && adminToken && (
         <div className="monthly-modal-backdrop" role="presentation">
           <section className="monthly-modal" role="dialog" aria-modal="true" aria-labelledby="monthly-cleanup-title">
@@ -2639,26 +2660,20 @@ const activeTheme = screenThemes[screenTheme]
   }
 
   const buttonStyle = (active = false, close = false) => ({
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 7,
-  minHeight: 38,
-  padding: '8px 12px',
-  borderRadius: 9,
-  border: active
-    ? '1px solid #93c5fd'
-    : `1px solid ${activeTheme.border}`,
-  background: close
-    ? '#b91c1c'
-    : active
-      ? '#1d4ed8'
-      : activeTheme.control,
-  color: close || active ? '#ffffff' : activeTheme.text,
-  fontSize: 13,
-  fontWeight: 650,
-  cursor: 'pointer',
-})
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    minHeight: 38,
+    padding: '8px 12px',
+    borderRadius: 9,
+    border: active ? '1px solid #93c5fd' : '1px solid #cbd5e1',
+    background: close ? '#b91c1c' : active ? '#1d4ed8' : '#f8fafc',
+    color: close || active ? '#ffffff' : '#172033',
+    fontSize: 13,
+    fontWeight: 650,
+    cursor: 'pointer',
+  })
 
   return (
     <div
@@ -2666,14 +2681,13 @@ const activeTheme = screenThemes[screenTheme]
       aria-modal="true"
       aria-label="Geçici soru çözüm alanı"
       style={{
-        
         position: 'fixed',
         inset: 0,
         zIndex: 10000,
         display: 'flex',
         flexDirection: 'column',
-        background: activeTheme.background,
-        color: activeTheme.text,
+        background: '#ffffff',
+        color: '#172033',
         padding: 'max(8px, env(safe-area-inset-top)) 10px max(8px, env(safe-area-inset-bottom))',
         boxSizing: 'border-box',
       }}
@@ -2687,7 +2701,7 @@ const activeTheme = screenThemes[screenTheme]
           gap: 12,
           flexWrap: 'wrap',
           padding: '4px 2px 10px',
-          background: activeTheme.panel,
+          background: '#ffffff',
         }}
       >
         <div>
@@ -2695,7 +2709,7 @@ const activeTheme = screenThemes[screenTheme]
             Geçici soru çözüm alanı
           </strong>
 
-          <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: activeTheme.muted }}>
+          <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: '#64748b' }}>
             Görselin dışındaki beyaz alanı da kullanabilirsin.
             Çizimlerin kaydedilmez.
           </span>
@@ -2784,7 +2798,7 @@ const activeTheme = screenThemes[screenTheme]
           gap: 8,
           flexWrap: 'wrap',
           padding: '9px 0 11px',
-          background: activeTheme.panel,
+          background: '#ffffff',
         }}
       >
         <button
@@ -2807,7 +2821,7 @@ const activeTheme = screenThemes[screenTheme]
 
         <span style={{ width: 1, height: 26, background: '#cbd5e1' }} />
 
-        {['#e53935', '#2563eb', '#16a34a', '#111827', '#ffffff'].map((swatch) => (
+        {['#e53935', '#2563eb', '#16a34a', '#111827'].map((swatch) => (
           <button
             key={swatch}
             type="button"
@@ -2838,7 +2852,7 @@ const activeTheme = screenThemes[screenTheme]
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            color: activeTheme.muted,
+            color: '#475569',
             fontSize: 12,
           }}
         >
@@ -2851,9 +2865,9 @@ const activeTheme = screenThemes[screenTheme]
               minHeight: 34,
               borderRadius: 8,
               padding: '4px 7px',
-              color: activeTheme.text,
-              background: activeTheme.control,
-              border: `1px solid ${activeTheme.border}`,
+              color: '#0f172a',
+              background: '#ffffff',
+              border: '1px solid #cbd5e1',
             }}
           >
             <option value="2">İnce</option>
@@ -2890,8 +2904,8 @@ const activeTheme = screenThemes[screenTheme]
           minHeight: 0,
           width: '100%',
           overflow: 'hidden',
-          background: activeTheme.canvas,
-          border: `1px solid ${activeTheme.border}`,
+          background: '#ffffff',
+          border: '1px solid #e2e8f0',
           borderRadius: 8,
           boxSizing: 'border-box',
           touchAction: 'none',

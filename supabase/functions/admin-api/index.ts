@@ -613,6 +613,7 @@ const BACKUP_TABLE_CONFIG = [
   { key: 'questionImages', table: 'da_question_images', order: 'id' },
   { key: 'analysisNotes', table: 'da_analysis_notes', order: 'id' },
   { key: 'weeklyNotes', table: 'da_weekly_notes', order: 'week_start' },
+  { key: 'dailyActivities', table: 'da_daily_activities', order: 'activity_date' },
   { key: 'monthlyReports', table: 'da_monthly_reports', order: 'month_key' },
 ]
 
@@ -763,6 +764,10 @@ const RESTORE_TABLES: Record<string, { table: string; conflict: string; columns:
     table: 'da_weekly_notes', conflict: 'week_start',
     columns: ['week_start', 'content', 'updated_at'],
   },
+  dailyActivities: {
+    table: 'da_daily_activities', conflict: 'activity_date',
+    columns: ['activity_date', 'content_html', 'updated_at'],
+  },
   monthlyReports: {
     table: 'da_monthly_reports', conflict: 'month_key',
     columns: ['month_key', 'report_data', 'generated_at'],
@@ -823,6 +828,7 @@ async function clearBackupTables(adminClient: AdminClient) {
     { table: 'da_exams', column: 'id' },
     { table: 'da_analysis_notes', column: 'id' },
     { table: 'da_weekly_notes', column: 'week_start' },
+    { table: 'da_daily_activities', column: 'activity_date' },
     { table: 'da_monthly_reports', column: 'month_key' },
   ]
 
@@ -1091,6 +1097,46 @@ async function saveWeeklyNote(adminClient: AdminClient, body: Record<string, unk
   }
   return jsonResponse({ ok: true, note: data })
 }
+async function saveDailyActivity(adminClient: AdminClient, body: Record<string, unknown>) {
+  const activityDate = String(body.activity_date ?? '')
+  const contentHtml = typeof body.content_html === 'string' ? body.content_html : ''
+
+  if (!isValidDate(activityDate)) {
+    return jsonResponse({ ok: false, error: 'Günlük kayıt tarihi geçersiz.' }, 400)
+  }
+
+  const weekday = new Date(`${activityDate}T00:00:00.000Z`).getUTCDay()
+  if (weekday === 1) {
+    return jsonResponse({ ok: false, error: 'Günlük yapılanlar yalnızca Salı-Pazar günleri için kaydedilebilir.' }, 400)
+  }
+
+  if (new TextEncoder().encode(contentHtml).length > 20000) {
+    return jsonResponse({ ok: false, error: 'Günlük çalışma metni 20 KB sınırını aşıyor.' }, 413)
+  }
+
+  // İçerik yalnızca yazı ve biçimlendirmeden oluşmalıdır. Aktif içerik/script kabul edilmez.
+  if (/<\s*(script|iframe|object|embed|img|svg|math|video|audio)\b/i.test(contentHtml)
+    || /\son[a-z]+\s*=/i.test(contentHtml)
+    || /javascript\s*:/i.test(contentHtml)) {
+    return jsonResponse({ ok: false, error: 'Günlük metinde izin verilmeyen HTML bulundu.' }, 400)
+  }
+
+  const { data, error } = await adminClient.from('da_daily_activities')
+    .upsert({
+      activity_date: activityDate,
+      content_html: contentHtml,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'activity_date' })
+    .select('activity_date, content_html, updated_at')
+    .single()
+
+  if (error || !data) {
+    console.error('Daily activity save error:', error)
+    return jsonResponse({ ok: false, error: `Günlük çalışma kaydedilemedi: ${error?.message || 'Kayıt sonucu alınamadı.'}` }, 500)
+  }
+
+  return jsonResponse({ ok: true, activity: data })
+}
 
 Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') {
@@ -1144,6 +1190,7 @@ Deno.serve(async (request: Request) => {
     if (action === 'delete_exam') return await deleteExam(adminClient, String(body.exam_id ?? ''))
     if (action === 'save_permanent_note') return await savePermanentNote(adminClient, body)
     if (action === 'save_weekly_note') return await saveWeeklyNote(adminClient, body)
+    if (action === 'save_daily_activity') return await saveDailyActivity(adminClient, body)
     if (action === 'save_monthly_report') return await saveMonthlyReport(adminClient, body)
     if (action === 'delete_monthly_report') return await deleteMonthlyReport(adminClient, body)
     if (action === 'delete_month_images') return await deleteMonthImages(adminClient, body)
