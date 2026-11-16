@@ -507,21 +507,29 @@ function App() {
     setDetailError('')
   }
 
-  // Mobilde yönetici giriş penceresini açmak için marka logosuna 5 kez dokunulabilir.
-  // Gerçek erişim yine sunucuda doğrulanan yönetici parolasını gerektirir.
-  const mobileAdminTapRef = useRef({ count: 0, lastTap: 0 })
-  const handleBrandPress = () => {
-    goHome()
-    const now = Date.now()
-    const taps = mobileAdminTapRef.current
-    if (now - taps.lastTap > 2200) taps.count = 0
-    taps.count += 1
-    taps.lastTap = now
-    if (taps.count >= 5) {
-      taps.count = 0
-      setShowAdminLogin(true)
-    }
+  // Tema düğmesine hızlıca 6 kez dokunulursa yönetici girişi açılır.
+const themeAdminTapRef = useRef({ count: 0, lastTap: 0 })
+
+const handleThemeButtonPress = () => {
+  setTheme((current) => current === 'dark' ? 'light' : 'dark')
+
+  if (adminToken || showAdminLogin) return
+
+  const now = Date.now()
+  const taps = themeAdminTapRef.current
+
+  if (now - taps.lastTap > 2500) {
+    taps.count = 0
   }
+
+  taps.count += 1
+  taps.lastTap = now
+
+  if (taps.count >= 6) {
+    taps.count = 0
+    setShowAdminLogin(true)
+  }
+}
 
   const handleAdminLogin = async (password) => {
     const result = await callAdminFunction('login', { password })
@@ -730,7 +738,7 @@ function App() {
   return (
     <div className={`app-shell ${theme}`}>
       <header className="topbar">
-        <button className="brand" onClick={handleBrandPress} aria-label="Ana sayfa; mobilde beş kez dokunarak yönetici girişini aç">
+        <button className="brand" onClick={goHome} aria-label="Ana sayfa; mobilde beş kez dokunarak yönetici girişini aç">
           <span className="brand-mark">D</span>
           <span className="brand-name">deneme<span>analiz</span></span>
         </button>
@@ -744,7 +752,7 @@ function App() {
           ) : <span className="topbar-label">Kişisel arşiv</span>}
           <button
             className="theme-button"
-            onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+            onClick={handleThemeButtonPress}
             title={theme === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'}
             aria-label={theme === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'}
           >
