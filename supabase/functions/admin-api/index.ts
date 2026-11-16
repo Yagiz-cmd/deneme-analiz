@@ -948,7 +948,46 @@ async function saveMonthlyReport(adminClient: AdminClient, body: Record<string, 
   }
   return jsonResponse({ ok: true, report: data })
 }
+async function deleteMonthlyReport(
+  adminClient: AdminClient,
+  body: Record<string, unknown>,
+) {
+  const monthKey = String(body.month_key ?? '')
 
+  if (!isValidMonthKey(monthKey)) {
+    return jsonResponse(
+      { ok: false, error: 'Silinecek aylık rapor dönemi geçersiz.' },
+      400,
+    )
+  }
+
+  const { data, error } = await adminClient
+    .from('da_monthly_reports')
+    .delete()
+    .eq('month_key', monthKey)
+    .select('month_key')
+    .maybeSingle()
+
+  if (error) {
+    console.error('Monthly report archive delete error:', error)
+    return jsonResponse(
+      { ok: false, error: `Aylık rapor silinemedi: ${error.message}` },
+      500,
+    )
+  }
+
+  if (!data) {
+    return jsonResponse(
+      { ok: false, error: 'Silinecek aylık rapor bulunamadı.' },
+      404,
+    )
+  }
+
+  return jsonResponse({
+    ok: true,
+    month_key: data.month_key,
+  })
+}
 async function deleteMonthImages(adminClient: AdminClient, body: Record<string, unknown>) {
   const monthKey = String(body.month_key ?? '')
   if (!isValidMonthKey(monthKey)) return jsonResponse({ ok: false, error: 'Silinecek ay geçersiz.' }, 400)
@@ -1106,6 +1145,7 @@ Deno.serve(async (request: Request) => {
     if (action === 'save_permanent_note') return await savePermanentNote(adminClient, body)
     if (action === 'save_weekly_note') return await saveWeeklyNote(adminClient, body)
     if (action === 'save_monthly_report') return await saveMonthlyReport(adminClient, body)
+    if (action === 'delete_monthly_report') return await deleteMonthlyReport(adminClient, body)
     if (action === 'delete_month_images') return await deleteMonthImages(adminClient, body)
     if (action === 'get_storage_usage') return await readStorageUsage(adminClient)
     if (action === 'export_backup_snapshot') return await exportBackupSnapshot(adminClient)

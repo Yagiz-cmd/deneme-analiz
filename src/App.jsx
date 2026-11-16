@@ -1931,6 +1931,8 @@ function MonthlyReportsPage({ exams, adminToken, onOpenExam }) {
   const [cleanupOpen, setCleanupOpen] = useState(false)
   const [imageDeleteConfirmOpen, setImageDeleteConfirmOpen] = useState(false)
   const [deletingImages, setDeletingImages] = useState(false)
+  const [archiveDeleteConfirmOpen, setArchiveDeleteConfirmOpen] = useState(false)
+  const [deletingArchive, setDeletingArchive] = useState(false)
   const [pageError, setPageError] = useState('')
   const [pageNotice, setPageNotice] = useState('')
 
@@ -1969,6 +1971,7 @@ function MonthlyReportsPage({ exams, adminToken, onOpenExam }) {
     setSelectedMonth(monthKey)
     setCleanupOpen(false)
     setImageDeleteConfirmOpen(false)
+    setArchiveDeleteConfirmOpen(false)
     setPageError('')
     setPageNotice('')
   }
@@ -2054,7 +2057,41 @@ function MonthlyReportsPage({ exams, adminToken, onOpenExam }) {
       setDeletingImages(false)
     }
   }
+  const handleDeleteMonthlyArchive = async () => {
+  if (!adminToken || !report || deletingArchive) return
 
+  setDeletingArchive(true)
+  setPageError('')
+  setPageNotice('')
+
+  try {
+    await callAdminFunction(
+      'delete_monthly_report',
+      { month_key: selectedMonth },
+      adminToken,
+    )
+
+    setArchives((current) =>
+      current.filter((item) => item.month_key !== selectedMonth)
+    )
+
+    setReport(null)
+    setArchiveDeleteConfirmOpen(false)
+    setCleanupOpen(false)
+    setImageDeleteConfirmOpen(false)
+
+    setPageNotice(
+      `${monthLabelForUi(selectedMonth)} raporu arşivden silindi. Deneme, soru, konu ve görsel kayıtları korundu.`
+    )
+  } catch (error) {
+    console.error('Aylık rapor arşivden silinemedi:', error)
+    setPageError(
+      error?.message || 'Aylık rapor arşivden silinemedi.'
+    )
+  } finally {
+    setDeletingArchive(false)
+  }
+}
   const archivedMonths = archives.map((item) => item.month_key)
   const generatedLabel = report?.generatedAt
     ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(report.generatedAt))
@@ -2119,6 +2156,16 @@ function MonthlyReportsPage({ exams, adminToken, onOpenExam }) {
             </div>
             <div className="monthly-report-actions">
               <button type="button" className="admin-action-button" onClick={handleDownloadArchived}>Word raporunu indir</button>
+              {adminToken && (
+  <button
+    type="button"
+    className="monthly-danger-button"
+    onClick={() => setArchiveDeleteConfirmOpen(true)}
+    disabled={deletingArchive}
+  >
+    Arşivden sil
+  </button>
+)}
               {adminToken && <button type="button" className="monthly-secondary-button" onClick={handleGenerateReport} disabled={savingReport}>{savingReport ? 'Hazırlanıyor…' : 'Güncel verilerle yeniden oluştur'}</button>}
             </div>
           </section>
@@ -2163,6 +2210,46 @@ function MonthlyReportsPage({ exams, adminToken, onOpenExam }) {
             <div className="monthly-modal-actions">
               <button type="button" className="monthly-secondary-button" onClick={() => setImageDeleteConfirmOpen(false)} disabled={deletingImages}>İptal</button>
               <button type="button" className="monthly-danger-button" onClick={handleDeleteMonthImages} disabled={deletingImages}>{deletingImages ? 'Görseller siliniyor…' : 'Evet, görselleri sil'}</button>
+            </div>
+
+          </section>
+        </div>
+      )}
+
+      {archiveDeleteConfirmOpen && adminToken && report && (
+        <div className="monthly-modal-backdrop" role="presentation">
+          <section
+            className="monthly-modal danger"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="archive-delete-title"
+          >
+            <span className="section-kicker">ARŞİV KAYDI SİLİNECEK</span>
+            <h2 id="archive-delete-title">
+              {monthLabelForUi(selectedMonth)} raporu silinsin mi?
+            </h2>
+            <p>
+              Yalnızca seçilen ayın arşivlenmiş Word raporu özeti silinecek.
+              Denemeler, soru kayıtları, konu analizleri, soru görselleri ve
+              haftalık notlar korunacak. Bu işlem geri alınamaz.
+            </p>
+            <div className="monthly-modal-actions">
+              <button
+                type="button"
+                className="monthly-secondary-button"
+                onClick={() => setArchiveDeleteConfirmOpen(false)}
+                disabled={deletingArchive}
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                className="monthly-danger-button"
+                onClick={handleDeleteMonthlyArchive}
+                disabled={deletingArchive}
+              >
+                {deletingArchive ? 'Siliniyor…' : 'Evet, arşivden sil'}
+              </button>
             </div>
           </section>
         </div>
