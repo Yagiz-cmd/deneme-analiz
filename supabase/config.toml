@@ -1,0 +1,6 @@
+project_id = "deneme-analiz-yeni"
+
+[functions.admin-api]
+# Bu fonksiyon Supabase Auth kullanmiyor; kendi ADMIN_PASSWORD + imzali oturumunu denetliyor.
+# Platform JWT kontrolu kapali olsa da fonksiyon kendi token dogrulamasini zorunlu tutar.
+verify_jwt = false
