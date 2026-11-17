@@ -68,6 +68,7 @@ function mapQuestion(row) {
     status: row.status === 'wrong' ? 'Yanlış' : 'Boş',
     reason: row.error_type || 'Hata nedeni belirtilmedi',
     note: row.note || '',
+    correctOption: row.correct_option || '',
     needsReview: Boolean(row.needs_review),
     images: [],
   }
@@ -534,7 +535,7 @@ function App() {
           .order('topic_name', { ascending: true }),
         supabase
           .from('da_questions')
-          .select('id, exam_id, question_number, topic_name, status, error_type, note, needs_review, created_at')
+          .select('id, exam_id, question_number, topic_name, status, error_type, note, correct_option, needs_review, created_at')
           .eq('exam_id', exam.id)
           .order('created_at', { ascending: true }),
       ])
@@ -557,6 +558,13 @@ function App() {
         imageRows = data || []
       }
 
+      const correctOptionsByQuestion = new Map(
+        questionRows.map((question) => [
+          question.id,
+          question.correct_option || '',
+        ])
+      )
+
       const imagesByQuestion = new Map()
       imageRows.forEach((imageRow) => {
         const current = imagesByQuestion.get(imageRow.question_id) || []
@@ -566,6 +574,7 @@ function App() {
           url: getPublicImageUrl(imageRow.storage_path),
           storagePath: imageRow.storage_path,
           sizeBytes: Number(imageRow.size_bytes || 0),
+          correctOption: correctOptionsByQuestion.get(imageRow.question_id) || '',
         })
         imagesByQuestion.set(imageRow.question_id, current)
       })
@@ -1673,11 +1682,18 @@ function WeeklyAnalysisPage({ exams, weekOffset, onWeekOffsetChange, adminToken,
       try {
         const { data: questionRows, error: questionError } = await supabase
           .from('da_questions')
-          .select('id, exam_id, question_number, topic_name, status, error_type, note, needs_review')
+          .select('id, exam_id, question_number, topic_name, status, error_type, note, correct_option, needs_review')
           .in('exam_id', ids)
           .eq('topic_name', selectedTopic)
           .order('question_number', { ascending: true })
         if (questionError) throw questionError
+
+        const correctOptionsByQuestion = new Map(
+          (questionRows || []).map((question) => [
+            question.id,
+            question.correct_option || '',
+          ])
+        )
 
         const questionIds = (questionRows || []).map((row) => row.id)
         let imagesByQuestion = new Map()
@@ -1690,7 +1706,12 @@ function WeeklyAnalysisPage({ exams, weekOffset, onWeekOffsetChange, adminToken,
           imagesByQuestion = new Map()
           ;(imageRows || []).forEach((image) => {
             const current = imagesByQuestion.get(image.question_id) || []
-            current.push({ id: image.id, name: image.original_name, url: getPublicImageUrl(image.storage_path) })
+            current.push({
+              id: image.id,
+              name: image.original_name,
+              url: getPublicImageUrl(image.storage_path),
+              correctOption: correctOptionsByQuestion.get(image.question_id) || '',
+            })
             imagesByQuestion.set(image.question_id, current)
           })
         }
@@ -2484,8 +2505,9 @@ function TemporaryImageAnnotator({ image, onClose }) {
   const [color, setColor] = useState('#e53935')
   const [strokeSize, setStrokeSize] = useState('3')
   const [canvasReady, setCanvasReady] = useState(false)
-  const [screenTheme, setScreenTheme] = useState('white')
-const [themeMenuOpen, setThemeMenuOpen] = useState(false)
+  const [screenTheme, setScreenTheme] = useState('navy')
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false)
+  const [answerVisible, setAnswerVisible] = useState(false)
 
 const screenThemes = {
   white: {
@@ -2829,7 +2851,7 @@ const activeTheme = screenThemes[screenTheme]
           </strong>
 
           <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: activeTheme.muted }}>
-            Görselin dışındaki beyaz alanı da kullanabilirsin.
+            Görselin çevresindeki çalışma alanını kullanabilirsin.
             Çizimlerin kaydedilmez.
           </span>
         </div>
@@ -2846,6 +2868,15 @@ const activeTheme = screenThemes[screenTheme]
     style={buttonStyle(themeMenuOpen)}
   >
     ◐ Renk
+  </button>
+
+  <button
+    type="button"
+    onClick={() => setAnswerVisible((visible) => !visible)}
+    style={buttonStyle(answerVisible)}
+    aria-expanded={answerVisible}
+  >
+    {answerVisible ? 'Cevabı gizle' : 'Cevabı göster'}
   </button>
 
   <button
@@ -2908,6 +2939,34 @@ const activeTheme = screenThemes[screenTheme]
   )}
 </div>
       </div>
+
+      {answerVisible && (
+        <div
+          role="status"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            margin: '8px 0',
+            padding: '12px 15px',
+            borderRadius: 10,
+            border: `1px solid ${activeTheme.border}`,
+            background: activeTheme.panel,
+            color: activeTheme.text,
+          }}
+        >
+          <strong>Doğru cevap:</strong>
+          {image?.correctOption ? (
+            <strong style={{ fontSize: 20, color: '#22c55e' }}>
+              {image.correctOption}
+            </strong>
+          ) : (
+            <span style={{ color: activeTheme.muted }}>
+              Bu soru için henüz doğru şık kaydedilmemiş.
+            </span>
+          )}
+        </div>
+      )}
 
       {/* KALEM VE SİLGİ ARAÇLARI */}
       <div
@@ -3306,6 +3365,7 @@ function AddQuestionModal({ exam, onClose, onSave }) {
   const [status, setStatus] = useState('wrong')
   const [errorType, setErrorType] = useState('')
   const [note, setNote] = useState('')
+  const [correctOption, setCorrectOption] = useState('')
   const [needsReview, setNeedsReview] = useState(false)
   const [files, setFiles] = useState([])
   const [error, setError] = useState('')
@@ -3342,6 +3402,7 @@ function AddQuestionModal({ exam, onClose, onSave }) {
         status,
         error_type: errorType,
         note: note.trim(),
+        correct_option: correctOption || null,
         needs_review: needsReview,
         files,
       })
@@ -3393,6 +3454,17 @@ function AddQuestionModal({ exam, onClose, onSave }) {
               </select>
             </label>
           </div>
+          <label className="form-field">
+            <span>Doğru şık</span>
+            <select value={correctOption} onChange={(event) => setCorrectOption(event.target.value)}>
+              <option value="">Henüz seçilmedi</option>
+              <option value="A">A şıkkı</option>
+              <option value="B">B şıkkı</option>
+              <option value="C">C şıkkı</option>
+              <option value="D">D şıkkı</option>
+              <option value="E">E şıkkı</option>
+            </select>
+          </label>
           <label className="form-field">
             <span>Kendi açıklamam</span>
             <textarea rows="2" maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Bu soruyla ilgili notun…" />
@@ -3647,7 +3719,7 @@ function CreateExamModal({ onClose, onSave }) {
       }))
 
     const questionPayload = questions
-      .filter((question) => question.number !== '' || question.topic.trim() || question.errorType || question.note.trim() || question.files.length > 0)
+      .filter((question) => question.number !== '' || question.topic.trim() || question.errorType || question.note.trim() || question.correctOption || question.files.length > 0)
       .map((question) => ({
         client_ref: question.rowId,
         question_number: question.number === '' ? null : Number(question.number),
@@ -3655,6 +3727,7 @@ function CreateExamModal({ onClose, onSave }) {
         status: question.status,
         error_type: question.errorType,
         note: question.note.trim(),
+        correct_option: question.correctOption || null,
         needs_review: question.needsReview,
       }))
 
@@ -3741,7 +3814,7 @@ function CreateExamModal({ onClose, onSave }) {
           <section className="form-section">
             <div className="form-section-heading">
               <div><h3>Yanlış ve boş soru kayıtları</h3><p>Her soruya fotoğraf ekleyebilirsin. PNG dosyaları kayıpsız optimize edilir; JPEG ve WebP dosyaları kalite kaybı olmadan orijinal hâliyle saklanır.</p></div>
-              <button className="form-secondary-button compact-button" type="button" onClick={() => setQuestions((current) => [...current, { rowId: createRowId(), number: '', topic: '', status: 'wrong', errorType: '', note: '', needsReview: false, files: [] }])}>+ Soru ekle</button>
+              <button className="form-secondary-button compact-button" type="button" onClick={() => setQuestions((current) => [...current, { rowId: createRowId(), number: '', topic: '', status: 'wrong', errorType: '', note: '', correctOption: '', needsReview: false, files: [] }])}>+ Soru ekle</button>
             </div>
             {questions.length ? (
               <div className="question-input-list">
@@ -3759,6 +3832,20 @@ function CreateExamModal({ onClose, onSave }) {
                       <label className="form-field"><span>Durum</span><select value={question.status} onChange={(event) => updateQuestion(question.rowId, 'status', event.target.value)}><option value="wrong">Yanlış</option><option value="blank">Boş</option></select></label>
                       <label className="form-field"><span>Hata nedeni</span><select value={question.errorType} onChange={(event) => updateQuestion(question.rowId, 'errorType', event.target.value)}><option value="">Belirtilmedi</option><option value="Bilgi eksikliği">Bilgi eksikliği</option><option value="Dikkat hatası">Dikkat hatası</option><option value="İşlem hatası">İşlem hatası</option><option value="Süre yetmedi">Süre yetmedi</option><option value="Yorumlama hatası">Yorumlama hatası</option></select></label>
                     </div>
+                    <label className="form-field">
+                      <span>Doğru şık</span>
+                      <select
+                        value={question.correctOption}
+                        onChange={(event) => updateQuestion(question.rowId, 'correctOption', event.target.value)}
+                      >
+                        <option value="">Henüz seçilmedi</option>
+                        <option value="A">A şıkkı</option>
+                        <option value="B">B şıkkı</option>
+                        <option value="C">C şıkkı</option>
+                        <option value="D">D şıkkı</option>
+                        <option value="E">E şıkkı</option>
+                      </select>
+                    </label>
                     <label className="form-field"><span>Kendi açıklamam</span><textarea rows="2" maxLength={2000} placeholder="Bu soruyla ilgili notun…" value={question.note} onChange={(event) => updateQuestion(question.rowId, 'note', event.target.value)} /></label>
                     <div className="question-file-picker">
                       <ImageFilePicker
