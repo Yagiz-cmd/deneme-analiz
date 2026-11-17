@@ -174,9 +174,21 @@ function uploadResumableFile(path, signedToken, file, upsert = false) {
     return Promise.reject(new Error('Supabase bağlantı ayarları bulunamadı.'))
   }
 
-  // İmzalı TUS yüklemesinde proje URL'sini kullan.
+  // Supabase TUS yüklemeleri için doğrudan Storage hostunu kullan.
+  // createSignedUploadUrl() tarafından üretilen token x-signature başlığıyla gönderilir.
+  let projectRef
+  try {
+    const parsedUrl = new URL(configuredUrl)
+    projectRef = parsedUrl.hostname.split('.')[0]
+    if (!projectRef || !parsedUrl.hostname.endsWith('.supabase.co')) {
+      throw new Error('Supabase proje adresi tanınamadı.')
+    }
+  } catch {
+    return Promise.reject(new Error('Supabase proje adresi geçersiz.'))
+  }
+
   const endpoint =
-    `${configuredUrl.replace(/\/+$/, '')}/storage/v1/upload/resumable/sign`
+    `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`
 
   return new Promise((resolve, reject) => {
     const upload = new Upload(file, {
