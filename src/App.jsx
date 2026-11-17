@@ -356,18 +356,21 @@ function readStoredAdminToken() {
   }
 }
 
-// Haftalık analiz, kullanıcının çalışma düzenine göre Salı-Pazar aralığını kapsar.
-// Pazartesi kontrol günüdür. Her kontrol pazartesisi bir önceki Salı-Pazar dönemini temsil eder.
+// Haftalık analiz ve günlük yapılanlar aynı Salı-Pazar çalışma haftasını kullanır.
+// Pazartesi önceki haftanın kontrol günüdür; Salı günü yeni çalışma haftası açılır.
+// Bu nedenle Salı-Pazar günleri yaklaşan Pazartesi, Pazartesi günü ise bugünkü
+// Pazartesi hafta anahtarı olarak kullanılır.
 function getMostRecentReviewMonday(referenceDate = new Date()) {
   const monday = new Date(referenceDate)
   monday.setHours(0, 0, 0, 0)
-  const daysSinceMonday = (monday.getDay() + 6) % 7
-  monday.setDate(monday.getDate() - daysSinceMonday)
+  const day = monday.getDay()
+  const daysUntilMonday = day === 1 ? 0 : (8 - day) % 7
+  monday.setDate(monday.getDate() + daysUntilMonday)
   return monday
 }
 
-function getWeekRange(offset = 0) {
-  const reviewMonday = getMostRecentReviewMonday()
+function getWeekRange(offset = 0, referenceDate = new Date()) {
+  const reviewMonday = getMostRecentReviewMonday(referenceDate)
   reviewMonday.setDate(reviewMonday.getDate() + (offset * 7))
 
   const start = new Date(reviewMonday)
@@ -549,6 +552,7 @@ function App() {
           .from('da_questions')
           .select('id, exam_id, question_number, topic_name, status, error_type, note, correct_option, needs_review, created_at')
           .eq('exam_id', exam.id)
+          .order('question_number', { ascending: true, nullsFirst: false })
           .order('created_at', { ascending: true }),
       ])
 
@@ -1588,12 +1592,33 @@ function WeeklyAnalysisPage({ exams, weekOffset, onWeekOffsetChange, adminToken,
   const [savingWeekly, setSavingWeekly] = useState(false)
   const [noteStatus, setNoteStatus] = useState('')
   const [annotatingImage, setAnnotatingImage] = useState(null)
+  const [calendarDateKey, setCalendarDateKey] = useState(todayDateValue)
 
-  const range = useMemo(() => getWeekRange(weekOffset), [weekOffset])
+  // Sayfa açık kalsa bile yerel tarih değiştiğinde haftayı otomatik yenile.
+  useEffect(() => {
+    const refreshCalendarDate = () => {
+      const nextDateKey = todayDateValue()
+      setCalendarDateKey((current) => current === nextDateKey ? current : nextDateKey)
+    }
+    const intervalId = window.setInterval(refreshCalendarDate, 60 * 1000)
+    window.addEventListener('focus', refreshCalendarDate)
+    document.addEventListener('visibilitychange', refreshCalendarDate)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refreshCalendarDate)
+      document.removeEventListener('visibilitychange', refreshCalendarDate)
+    }
+  }, [])
+
+  const calendarDate = useMemo(() => {
+    const [year, month, day] = calendarDateKey.split('-').map(Number)
+    return new Date(year, month - 1, day)
+  }, [calendarDateKey])
+  const range = useMemo(() => getWeekRange(weekOffset, calendarDate), [weekOffset, calendarDate])
   const rangeLabel = `${formatShortDate(range.start)} – ${formatShortDate(range.end)} ${range.end.getFullYear()}`
   const isCurrentWeek = weekOffset === 0
   const weekInputValue = range.reviewMondayKey
-  const maxReviewMondayKey = getWeekRange(0).reviewMondayKey
+  const maxReviewMondayKey = getWeekRange(0, calendarDate).reviewMondayKey
 
   useEffect(() => {
     setExpandedDayKey('')
@@ -1811,7 +1836,7 @@ function WeeklyAnalysisPage({ exams, weekOffset, onWeekOffsetChange, adminToken,
     const reviewMonday = getReviewMondayForDate(event.target.value)
     if (!reviewMonday) return
 
-    const currentReviewMonday = getWeekRange(0).reviewMonday
+    const currentReviewMonday = getWeekRange(0, calendarDate).reviewMonday
     const differenceInDays = getDayDifference(currentReviewMonday, reviewMonday)
     if (differenceInDays > 0 || differenceInDays % 7 !== 0) return
 

@@ -21,23 +21,23 @@ function dailyDateKey(date) {
   return `${year}-${month}-${day}`
 }
 
-function getDailyWeek(offset = 0) {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+function getDailyWeek(offset = 0, referenceDate = new Date()) {
+  const monday = new Date(referenceDate)
+  monday.setHours(0, 0, 0, 0)
+  const dayOfWeek = monday.getDay()
+  // Pazartesi, önceki Salı-Pazar haftasının kontrol günüdür. Salı günü
+  // yeni hafta başlar ve hafta anahtarı bir sonraki Pazartesiye taşınır.
+  const daysUntilMonday = dayOfWeek === 1 ? 0 : (8 - dayOfWeek) % 7
+  monday.setDate(monday.getDate() + daysUntilMonday + (offset * 7))
 
-  // Pazartesi önceki haftayı korur; Salı yeni haftayı başlatır.
-  const daysSinceTuesday = (today.getDay() + 5) % 7
-
-  const start = new Date(today)
-  start.setDate(today.getDate() - daysSinceTuesday + (offset * 7))
-
-  const end = new Date(start)
-  end.setDate(start.getDate() + 5)
+  const start = new Date(monday)
+  start.setDate(start.getDate() - 6) // Salı
+  const end = new Date(monday)
+  end.setDate(end.getDate() - 1) // Pazar
 
   const dates = DAILY_DAYS.map((day, index) => {
     const date = new Date(start)
     date.setDate(start.getDate() + index)
-
     return {
       ...day,
       date,
@@ -47,7 +47,7 @@ function getDailyWeek(offset = 0) {
         month: 'long',
         year: 'numeric',
       }).format(date),
-      isToday: dailyDateKey(date) === dailyDateKey(today),
+      isToday: dailyDateKey(date) === dailyDateKey(new Date()),
     }
   })
 
@@ -320,18 +320,6 @@ function DailyActivityDayCard({ day, contentHtml, adminToken, saving, onSave, on
 export default function DailyActivitiesPlanner({ adminToken }) {
   const [weekOffset, setWeekOffset] = useState(0)
   const [calendarDateKey, setCalendarDateKey] = useState(() => dailyDateKey(new Date()))
-
-useEffect(() => {
-  const timer = window.setInterval(() => {
-    const currentDateKey = dailyDateKey(new Date())
-
-    setCalendarDateKey((previousDateKey) => (
-      previousDateKey === currentDateKey ? previousDateKey : currentDateKey
-    ))
-  }, 10000)
-
-  return () => window.clearInterval(timer)
-}, [])
   const [records, setRecords] = useState({})
   const [loading, setLoading] = useState(true)
   const [savingDate, setSavingDate] = useState('')
@@ -339,10 +327,26 @@ useEffect(() => {
   const [notice, setNotice] = useState('')
   const [dirtyDates, setDirtyDates] = useState([])
 
-  const week = useMemo(
-  () => getDailyWeek(weekOffset),
-  [weekOffset, calendarDateKey]
-)
+  useEffect(() => {
+    const refreshCalendarDate = () => {
+      const nextDateKey = dailyDateKey(new Date())
+      setCalendarDateKey((current) => current === nextDateKey ? current : nextDateKey)
+    }
+    const intervalId = window.setInterval(refreshCalendarDate, 60 * 1000)
+    window.addEventListener('focus', refreshCalendarDate)
+    document.addEventListener('visibilitychange', refreshCalendarDate)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refreshCalendarDate)
+      document.removeEventListener('visibilitychange', refreshCalendarDate)
+    }
+  }, [])
+
+  const calendarDate = useMemo(() => {
+    const [year, month, day] = calendarDateKey.split('-').map(Number)
+    return new Date(year, month - 1, day)
+  }, [calendarDateKey])
+  const week = useMemo(() => getDailyWeek(weekOffset, calendarDate), [weekOffset, calendarDate])
 
   useEffect(() => {
     let cancelled = false
