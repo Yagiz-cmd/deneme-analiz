@@ -96,8 +96,22 @@ function sanitizeDailyActivityHtml(value) {
     if (tag === 'SPAN') {
       const suppliedColor = node.style?.color || ''
       const suppliedSize = node.style?.fontSize || ''
-      if (/^#[0-9a-f]{3,8}$/i.test(suppliedColor)) clean.style.color = suppliedColor
+      const suppliedFontStyle = node.style?.fontStyle || ''
+
+      // Tarayıcılar #hex renkleri DOM/CSSOM üzerinden rgb(...) biçiminde döndürebilir.
+      // Her iki güvenli biçimi de sakla; aksi hâlde kayıt sırasında renk bilgisi kaybolur.
+      const hexColorIsSafe = /^#[0-9a-f]{3,8}$/i.test(suppliedColor)
+      const rgbMatch = suppliedColor.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i)
+      const rgbaMatch = suppliedColor.match(/^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0|1|0?\.\d+)\s*\)$/i)
+      const rgbColorIsSafe = Boolean(rgbMatch && rgbMatch.slice(1).every((channel) => Number(channel) <= 255))
+      const rgbaColorIsSafe = Boolean(rgbaMatch && rgbaMatch.slice(1, 4).every((channel) => Number(channel) <= 255) && Number(rgbaMatch[4]) <= 1)
+
+      if (hexColorIsSafe || rgbColorIsSafe || rgbaColorIsSafe) clean.style.color = suppliedColor
       if (/^(12|14|16|18|22|26)px$/.test(suppliedSize)) clean.style.fontSize = suppliedSize
+      // Bazı tarayıcılar italik biçimini <em>/<i> yerine span stili olarak üretir.
+      if (suppliedFontStyle === 'italic' || suppliedFontStyle === 'oblique') {
+        clean.style.fontStyle = suppliedFontStyle
+      }
     }
 
     Array.from(node.childNodes).forEach((child) => clean.appendChild(cleanNode(child)))
@@ -176,7 +190,32 @@ function DailyActivityDayCard({ day, contentHtml, adminToken, saving, onSave, on
   const runFormatCommand = (command) => {
     const selection = restoreSelection()
     if (!selection) return
-    document.execCommand(command, false, null)
+
+    // İtalik komutu bazı tarayıcı/odak durumlarında execCommand ile çalışmayabiliyor.
+    // Önce seçimi doğrula, ardından native komutu uygula; desteklenmiyorsa seçimi <em> ile sar.
+    if (command === 'italic' && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0)
+      const beforeHtml = editorRef.current?.innerHTML || ''
+      const nativeResult = document.execCommand('italic', false, null)
+      const afterHtml = editorRef.current?.innerHTML || ''
+
+      if ((!nativeResult || beforeHtml === afterHtml) && !range.collapsed) {
+        const currentRange = selection.getRangeAt(0)
+        const selectedContent = currentRange.extractContents()
+        const emphasis = document.createElement('em')
+        emphasis.appendChild(selectedContent)
+        currentRange.insertNode(emphasis)
+
+        const nextRange = document.createRange()
+        nextRange.selectNodeContents(emphasis)
+        selection.removeAllRanges()
+        selection.addRange(nextRange)
+        savedRangeRef.current = nextRange.cloneRange()
+      }
+    } else {
+      document.execCommand(command, false, null)
+    }
+
     rememberSelection()
     setFormatError('')
     markDirty()
@@ -249,7 +288,7 @@ function DailyActivityDayCard({ day, contentHtml, adminToken, saving, onSave, on
         <>
           <div className="daily-editor-toolbar" aria-label={`${day.name} biçimlendirme araçları`}>
             <button type="button" className="daily-format-button format-bold" title="Kalın" aria-label="Kalın" onMouseDown={(event) => event.preventDefault()} onClick={() => runFormatCommand('bold')}>B</button>
-            <button type="button" className="daily-format-button format-italic" title="İtalik" aria-label="İtalik" onMouseDown={(event) => event.preventDefault()} onClick={() => runFormatCommand('italic')}>I</button>
+            <button type="button" className="daily-format-button format-italic" title="İtalik yap" aria-label="Seçili metni italik yap" onMouseDown={(event) => event.preventDefault()} onClick={() => runFormatCommand('italic')}>I</button>
             <button type="button" className="daily-format-button format-underline" title="Altı çizili" aria-label="Altı çizili" onMouseDown={(event) => event.preventDefault()} onClick={() => runFormatCommand('underline')}>U</button>
 
             <select
